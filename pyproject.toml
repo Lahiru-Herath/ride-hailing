@@ -1,0 +1,17 @@
+[project]
+name = "ride-hailing-pipeline"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.11"
+dependencies = [
+    "alembic>=1.20.0",
+    "faker>=40.39.0",
+    "fastapi>=0.141.1",
+    "kafka-python>=3.0.11",
+    "pandas>=3.0.6",
+    "psycopg2-binary>=2.9.13",
+    "pyspark>=4.2.0",
+    "python-dotenv>=1.2.3",
+    "sqlalchemy>=2.1.1",
+    "uvicorn[standard]>=0.54.0",
+]
