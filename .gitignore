@@ -8,3 +8,8 @@ data/
 .DS_Store
 airflow/logs/
 airflow/airflow.db
+
+# generated data — synthetic, regenerated on every run, not project source
+storage/batch_incoming/
+storage/raw_events/
+storage/checkpoints/

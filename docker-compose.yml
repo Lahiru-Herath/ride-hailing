@@ -15,6 +15,8 @@ services:
             KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
             KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
             KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+        volumes:
+            - kafka-data:/tmp/kraft-combined-logs
 
     postgres:
         image: postgres:18
@@ -53,5 +55,34 @@ services:
             - "8080:8080"
         command: standalone
 
+    spark:
+        build:
+            context: ./processing
+            dockerfile: Dockerfile
+        image: ride-hailing-spark:4.1.3-custom
+        container_name: spark
+        depends_on:
+            - kafka
+            - postgres
+        environment:
+            POSTGRES_HOST: postgres # internal Docker network hostname, port 5432 (not the 5433 host mapping)
+            POSTGRES_DB: ridehailing
+            POSTGRES_USER: pipeline
+            POSTGRES_PASSWORD: pipeline
+            KAFKA_BOOTSTRAP_SERVERS: kafka:9092 # internal listener, not localhost:9094
+            KAFKA_TOPIC_TRIP_EVENTS: trip_events
+            IDLE_ALERT_THRESHOLD_MINUTES: 10
+        volumes:
+            - ./processing:/opt/spark-apps
+            - ./storage:/opt/spark-apps/storage
+            - ./observability:/opt/spark-apps/observability
+            - spark-ivy-cache:/root/.ivy2 # caches the Kafka connector jar so it isn't re-downloaded on every restart
+        command: >
+            /opt/spark/bin/spark-submit
+            --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.3
+            /opt/spark-apps/speed_layer_job.py
+
 volumes:
     pgdata:
+    spark-ivy-cache:
+    kafka-data:
