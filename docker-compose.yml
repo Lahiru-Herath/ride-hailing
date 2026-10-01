@@ -37,7 +37,10 @@ services:
             retries: 10
 
     airflow:
-        image: apache/airflow:3.3.2
+        build:
+            context: ./orchestration
+            dockerfile: Dockerfile
+        image: ride-hailing-airflow:3.3.2-custom
         container_name: airflow
         depends_on:
             postgres:
@@ -48,9 +51,22 @@ services:
             AIRFLOW__CORE__LOAD_EXAMPLES: "false"
             _AIRFLOW_WWW_USER_USERNAME: admin
             _AIRFLOW_WWW_USER_PASSWORD: admin
+            # Filesystem connection used by FileSensor (base path = the mounted storage folder, D28)
+            AIRFLOW_CONN_FS_DEFAULT: '{"conn_type": "fs", "extra": {"path": "/opt/airflow/storage"}}'
+            # Config for processing/batch_reconciliation.py (app DB, not the airflow_meta DB)
+            POSTGRES_HOST: postgres
+            POSTGRES_PORT: 5432
+            POSTGRES_DB: ridehailing
+            POSTGRES_USER: pipeline
+            POSTGRES_PASSWORD: pipeline
+            STORAGE_ROOT: /opt/airflow/storage
+            SIM_DAY_DURATION_SECONDS: 300
+            STREAM_FLUSH_GRACE_SECONDS: 90
         volumes:
             - ./orchestration/dags:/opt/airflow/dags
             - ./storage:/opt/airflow/storage
+            - ./processing:/opt/airflow/project/processing
+            - ./observability:/opt/airflow/project/observability
         ports:
             - "8080:8080"
         command: standalone
@@ -65,18 +81,18 @@ services:
             - kafka
             - postgres
         environment:
-            POSTGRES_HOST: postgres # internal Docker network hostname, port 5432 (not the 5433 host mapping)
+            POSTGRES_HOST: postgres
             POSTGRES_DB: ridehailing
             POSTGRES_USER: pipeline
             POSTGRES_PASSWORD: pipeline
-            KAFKA_BOOTSTRAP_SERVERS: kafka:9092 # internal listener, not localhost:9094
+            KAFKA_BOOTSTRAP_SERVERS: kafka:9092
             KAFKA_TOPIC_TRIP_EVENTS: trip_events
             IDLE_ALERT_THRESHOLD_MINUTES: 10
         volumes:
             - ./processing:/opt/spark-apps
             - ./storage:/opt/spark-apps/storage
             - ./observability:/opt/spark-apps/observability
-            - spark-ivy-cache:/root/.ivy2 # caches the Kafka connector jar so it isn't re-downloaded on every restart
+            - spark-ivy-cache:/root/.ivy2
         command: >
             /opt/spark/bin/spark-submit
             --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.3

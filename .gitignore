@@ -13,3 +13,4 @@ airflow/airflow.db
 storage/batch_incoming/
 storage/raw_events/
 storage/checkpoints/
+storage/batch_processed/
