@@ -98,6 +98,27 @@ services:
             --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.3
             /opt/spark-apps/speed_layer_job.py
 
+    api:
+        build:
+            context: .
+            dockerfile: serving/Dockerfile
+        image: ride-hailing-api:0.1.0
+        container_name: api
+        restart: on-failure
+        depends_on:
+            postgres:
+                condition: service_healthy
+        environment:
+            DATABASE_URL: postgresql+psycopg2://pipeline:pipeline@postgres:5432/ridehailing
+        ports:
+            - "8000:8000"
+        healthcheck:
+            test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+            interval: 15s
+            timeout: 5s
+            retries: 5
+            start_period: 10s
+
 volumes:
     pgdata:
     spark-ivy-cache:

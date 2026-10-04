@@ -1,0 +1,7 @@
+*
+!pyproject.toml
+!uv.lock
+!storage/models.py
+!observability/logging_config.py
+!serving/api
+**/__pycache__

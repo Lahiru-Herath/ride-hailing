@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1"
+        />
+        <title>Ride-Hailing Fleet Operations</title>
+        <style>
+            :root {
+                --bg: #0f1419;
+                --panel: #171e26;
+                --line: #26303b;
+                --text: #e6edf3;
+                --muted: #8b98a5;
+                --accent: #4aa3ff;
+                --good: #3fb950;
+                --bad: #f85149;
+                --warn: #d29922;
+            }
+            * {
+                box-sizing: border-box;
+            }
+            body {
+                margin: 0;
+                font:
+                    14px/1.45 system-ui,
+                    "Segoe UI",
+                    Roboto,
+                    sans-serif;
+                background: var(--bg);
+                color: var(--text);
+            }
+            header {
+                padding: 14px 20px;
+                border-bottom: 1px solid var(--line);
+                display: flex;
+                flex-wrap: wrap;
+                gap: 12px 24px;
+                align-items: baseline;
+            }
+            header h1 {
+                font-size: 18px;
+                margin: 0;
+            }
+            .chips {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-left: auto;
+            }
+            .chip {
+                background: var(--panel);
+                border: 1px solid var(--line);
+                border-radius: 14px;
+                padding: 2px 10px;
+                color: var(--muted);
+                font-size: 12px;
+            }
+            .chip b {
+                color: var(--text);
+                font-weight: 600;
+            }
+            .chip.warn b {
+                color: var(--warn);
+            }
+            #error {
+                margin: 12px 20px 0;
+                padding: 8px 12px;
+                border: 1px solid var(--bad);
+                border-radius: 6px;
+                color: var(--bad);
+            }
+            main {
+                padding: 16px 20px 32px;
+                display: grid;
+                gap: 14px;
+            }
+            .grid {
+                display: grid;
+                gap: 14px;
+                grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            }
+            .panel {
+                background: var(--panel);
+                border: 1px solid var(--line);
+                border-radius: 8px;
+                padding: 14px;
+                overflow-x: auto;
+            }
+            h2 {
+                font-size: 12px;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+                color: var(--muted);
+                margin: 0 0 4px;
+            }
+            .sub {
+                color: var(--muted);
+                font-size: 12px;
+                margin: 0 0 10px;
+            }
+            .stats {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 10px;
+            }
+            .stat .v {
+                font-size: 22px;
+                font-weight: 600;
+            }
+            .stat .l {
+                color: var(--muted);
+                font-size: 12px;
+            }
+            .zones {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 8px;
+            }
+            .zone {
+                border: 1px solid var(--line);
+                border-radius: 6px;
+                padding: 8px;
+                background: rgba(74, 163, 255, var(--a, 0));
+                min-height: 74px;
+            }
+            .zone .z {
+                font-weight: 600;
+            }
+            .zone .m {
+                color: var(--muted);
+                font-size: 12px;
+            }
+            .zone.empty {
+                opacity: 0.45;
+            }
+            .bars {
+                display: flex;
+                align-items: flex-end;
+                gap: 8px;
+                height: 130px;
+            }
+            .bar {
+                flex: 1;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                justify-content: flex-end;
+                align-items: center;
+                font-size: 12px;
+                color: var(--muted);
+            }
+            .bar i {
+                display: block;
+                width: 100%;
+                background: var(--accent);
+                border-radius: 3px 3px 0 0;
+                min-height: 2px;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            th,
+            td {
+                padding: 5px 8px;
+                text-align: right;
+                border-bottom: 1px solid var(--line);
+                white-space: nowrap;
+            }
+            th {
+                color: var(--muted);
+                font-weight: 500;
+                font-size: 12px;
+            }
+            th:first-child,
+            td:first-child {
+                text-align: left;
+            }
+            .good {
+                color: var(--good);
+            }
+            .bad {
+                color: var(--bad);
+            }
+            .warn {
+                color: var(--warn);
+            }
+            .badge {
+                padding: 1px 8px;
+                border-radius: 10px;
+                font-size: 12px;
+                border: 1px solid var(--line);
+            }
+            .badge.on {
+                color: var(--bad);
+                border-color: var(--bad);
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1>Ride-Hailing Fleet Operations</h1>
+            <div class="chips">
+                <span
+                    class="chip"
+                    id="chip-speed"
+                    >Speed layer: <b>—</b></span
+                >
+                <span
+                    class="chip"
+                    id="chip-batch"
+                    >Batch layer: <b>—</b></span
+                >
+                <span class="chip"
+                    >Refreshed <b id="refreshed">—</b> · every 5 s · times UTC
+                    (hover for local)</span
+                >
+            </div>
+        </header>
+        <div
+            id="error"
+            hidden
+        ></div>
+
+        <main>
+            <section class="grid">
+                <div class="panel">
+                    <h2>Batch layer · latest completed simulated day</h2>
+                    <p
+                        class="sub"
+                        id="batch-sub"
+                    >
+                        —
+                    </p>
+                    <div
+                        class="stats"
+                        id="batch-stats"
+                    ></div>
+                </div>
+                <div class="panel">
+                    <h2>Speed layer · latest window</h2>
+                    <p
+                        class="sub"
+                        id="speed-sub"
+                    >
+                        —
+                    </p>
+                    <div
+                        class="stats"
+                        id="speed-stats"
+                    ></div>
+                </div>
+                <div class="panel">
+                    <h2>Speed layer · since batch cutoff</h2>
+                    <p
+                        class="sub"
+                        id="since-sub"
+                    >
+                        Windows ending after the latest batch day (approximate,
+                        windows are misaligned).
+                    </p>
+                    <div
+                        class="stats"
+                        id="since-stats"
+                    ></div>
+                </div>
+            </section>
+
+            <section class="grid">
+                <div class="panel">
+                    <h2>Zones · latest window</h2>
+                    <p class="sub">
+                        A = vehicles seen non-idle, I = seen idle, per zone (a
+                        vehicle can appear in several zones).
+                    </p>
+                    <div
+                        class="zones"
+                        id="zones"
+                    ></div>
+                </div>
+                <div class="panel">
+                    <h2>Trips per 5-minute window</h2>
+                    <p
+                        class="sub"
+                        id="bars-sub"
+                    >
+                        Last 6 windows, oldest on the left.
+                    </p>
+                    <div
+                        class="bars"
+                        id="bars"
+                    ></div>
+                </div>
+                <div class="panel">
+                    <h2>Idle-vehicle alerts</h2>
+                    <p
+                        class="sub"
+                        id="alerts-sub"
+                    >
+                        —
+                    </p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Vehicle</th>
+                                <th>Triggered (UTC)</th>
+                                <th>Age</th>
+                                <th>State</th>
+                            </tr>
+                        </thead>
+                        <tbody id="alerts"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="grid">
+                <div
+                    class="panel"
+                    style="grid-column: 1/-1"
+                >
+                    <h2>Vehicle profitability · latest simulated day</h2>
+                    <p
+                        class="sub"
+                        id="veh-sub"
+                    >
+                        —
+                    </p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Vehicle</th>
+                                <th>Trips</th>
+                                <th>Earnings</th>
+                                <th>Fuel</th>
+                                <th>Maint.</th>
+                                <th>Net profit</th>
+                                <th>km</th>
+                                <th>Service</th>
+                            </tr>
+                        </thead>
+                        <tbody id="veh"></tbody>
+                    </table>
+                </div>
+                <div
+                    class="panel"
+                    style="grid-column: 1/-1"
+                >
+                    <h2>Fleet profitability by simulated day</h2>
+                    <p class="sub">
+                        Last 12 batch results, newest first (LKR).
+                    </p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Day ended (UTC)</th>
+                                <th>Trips</th>
+                                <th>Earnings</th>
+                                <th>Costs</th>
+                                <th>Net profit</th>
+                                <th>Profitable</th>
+                            </tr>
+                        </thead>
+                        <tbody id="hist"></tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+
+        <script>
+            const REFRESH_MS = 5000;
+            const ZONES = [
+                "Z1",
+                "Z2",
+                "Z3",
+                "Z4",
+                "Z5",
+                "Z6",
+                "Z7",
+                "Z8",
+                "Z9",
+            ];
+            const $ = (id) => document.getElementById(id);
+            const esc = (s) =>
+                String(s ?? "").replace(
+                    /[&<>"]/g,
+                    (c) =>
+                        ({
+                            "&": "&amp;",
+                            "<": "&lt;",
+                            ">": "&gt;",
+                            '"': "&quot;",
+                        })[c],
+                );
+            const num = (n, d = 0) =>
+                Number(n ?? 0).toLocaleString("en-US", {
+                    minimumFractionDigits: d,
+                    maximumFractionDigits: d,
+                });
+            const utc = (iso, secs = false) =>
+                iso ? iso.slice(11, secs ? 19 : 16) : "—";
+            const local = (iso) =>
+                iso
+                    ? new Date(iso).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                          hour12: false,
+                      })
+                    : "";
+            const tm = (iso, secs = true) =>
+                iso
+                    ? `<span title="local: ${esc(local(iso))}">${utc(iso, secs)}</span>`
+                    : "—";
+            const lag = (s) =>
+                s == null
+                    ? "—"
+                    : s < 0
+                      ? "0s"
+                      : `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s`;
+            const cls = (n) => (n > 0 ? "good" : n < 0 ? "bad" : "");
+            const stat = (label, value, c = "") =>
+                `<div class="stat"><div class="v ${c}">${value}</div><div class="l">${esc(label)}</div></div>`;
+
+            async function getJson(url) {
+                const r = await fetch(url, { cache: "no-store" });
+                if (!r.ok) throw new Error(`${url} -> HTTP ${r.status}`);
+                return r.json();
+            }
+
+            function renderFreshness(f) {
+                const speedStale =
+                    f.speed_lag_seconds != null && f.speed_lag_seconds > 600; // > ~10 min: beyond normal 3-8 min
+                const batchStale =
+                    f.batch_lag_seconds != null && f.batch_lag_seconds > 720; // > 2 sim days behind
+                $("chip-speed").className =
+                    "chip" + (speedStale ? " warn" : "");
+                $("chip-speed").innerHTML =
+                    `Speed layer: data through <b>${tm(f.speed_data_through, false)}</b> · lag <b>${lag(f.speed_lag_seconds)}</b>`;
+                $("chip-batch").className =
+                    "chip" + (batchStale ? " warn" : "");
+                $("chip-batch").innerHTML =
+                    `Batch layer: through <b>${tm(f.batch_through, true)}</b> · lag <b>${lag(f.batch_lag_seconds)}</b>`;
+            }
+
+            function renderOverview(ov) {
+                const b = ov.batch;
+                $("batch-sub").innerHTML = b
+                    ? `Day ended ${tm(b.report_date)} UTC · authoritative recompute from raw events + cost file`
+                    : "No batch result yet";
+                $("batch-stats").innerHTML = b
+                    ? [
+                          stat("trips", num(b.trips_completed)),
+                          stat("earnings (LKR)", num(b.total_earnings)),
+                          stat(
+                              "net profit (LKR)",
+                              num(b.net_profit),
+                              cls(b.net_profit),
+                          ),
+                          stat(
+                              "profitable vehicles",
+                              `${b.profitable_vehicles} / ${b.vehicles}`,
+                          ),
+                      ].join("")
+                    : "";
+
+                const w = ov.speed_latest_window;
+                $("speed-sub").innerHTML = w
+                    ? `Window ${tm(w.window_start, false)}–${tm(w.window_end, false)} UTC · ${w.zones.length} of 9 zones reporting`
+                    : "No speed-layer data yet";
+                $("speed-stats").innerHTML = w
+                    ? [
+                          stat("trips completed", num(w.trips_completed)),
+                          stat("earnings (LKR)", num(w.total_earnings)),
+                      ].join("")
+                    : "";
+
+                const s = ov.speed_since_batch;
+                $("since-stats").innerHTML = [
+                    stat("windows", num(s.windows)),
+                    stat("trips completed", num(s.trips_completed)),
+                    stat("earnings (LKR)", num(s.total_earnings)),
+                ].join("");
+            }
+
+            function renderZones(rt) {
+                const w = rt.windows[0];
+                const byZone = Object.fromEntries(
+                    (w ? w.zones : []).map((z) => [z.zone, z]),
+                );
+                const maxTrips = Math.max(
+                    1,
+                    ...Object.values(byZone).map((z) => z.trips_completed),
+                );
+                $("zones").innerHTML = ZONES.map((name) => {
+                    const z = byZone[name];
+                    if (!z)
+                        return `<div class="zone empty"><div class="z">${name}</div><div class="m">no events</div></div>`;
+                    const a = (
+                        0.08 +
+                        (0.5 * z.trips_completed) / maxTrips
+                    ).toFixed(2);
+                    return `<div class="zone" style="--a:${a}"><div class="z">${name}</div>
+      <div>${num(z.trips_completed)} trips</div>
+      <div class="m">${num(z.total_earnings)} LKR · A${z.active_vehicles} I${z.idle_vehicles}</div></div>`;
+                }).join("");
+            }
+
+            function renderBars(rt) {
+                const ws = [...rt.windows].reverse();
+                const max = Math.max(1, ...ws.map((w) => w.trips_completed));
+                $("bars").innerHTML = ws
+                    .map(
+                        (
+                            w,
+                        ) => `<div class="bar" title="${num(w.total_earnings)} LKR">
+      <span>${w.trips_completed}</span><i style="height:${Math.round(((100 * w.trips_completed) / max) * 0.8)}%"></i>
+      <span>${tm(w.window_start, false)}</span></div>`,
+                    )
+                    .join("");
+            }
+
+            function renderAlerts(al) {
+                $("alerts-sub").innerHTML =
+                    `<b class="${al.active_count ? "bad" : ""}">${al.active_count} active</b> (fired in the last ${al.active_minutes} min) · ${al.total_count} total.
+    The pipeline does not resolve alerts yet, so "active" is time-based.`;
+                $("alerts").innerHTML = al.alerts
+                    .map(
+                        (
+                            a,
+                        ) => `<tr><td>${esc(a.entity_id)}</td><td>${tm(a.triggered_at)}</td>
+    <td>${num(a.age_minutes, 1)} min</td><td><span class="badge ${a.active ? "on" : ""}">${a.active ? "active" : "past"}</span></td></tr>`,
+                    )
+                    .join("");
+            }
+
+            function renderProfitability(pf) {
+                const l = pf.latest;
+                $("veh-sub").innerHTML = l
+                    ? `Day ended ${tm(l.report_date)} UTC · ${l.profitable_vehicles} of ${l.vehicles} vehicles profitable`
+                    : "No batch result yet";
+                $("veh").innerHTML = pf.vehicles
+                    .map(
+                        (
+                            v,
+                        ) => `<tr><td>${esc(v.vehicle_id)}</td><td>${v.trips_completed}</td>
+    <td>${num(v.total_earnings)}</td><td>${num(v.fuel_cost)}</td><td>${num(v.maintenance_cost)}</td>
+    <td class="${v.is_profitable ? "good" : "bad"}">${num(v.net_profit)}</td><td>${num(v.distance_covered_km, 1)}</td>
+    <td>${v.service_flag ? "service" : ""}</td></tr>`,
+                    )
+                    .join("");
+                $("hist").innerHTML = pf.history
+                    .map(
+                        (
+                            d,
+                        ) => `<tr><td>${tm(d.report_date)}</td><td>${d.trips_completed}</td>
+    <td>${num(d.total_earnings)}</td><td>${num(d.fuel_cost + d.maintenance_cost)}</td>
+    <td class="${cls(d.net_profit)}">${num(d.net_profit)}</td><td>${d.profitable_vehicles} / ${d.vehicles}</td></tr>`,
+                    )
+                    .join("");
+            }
+
+            async function refresh() {
+                try {
+                    const [ov, rt, pf, al] = await Promise.all([
+                        getJson("/fleet/overview"),
+                        getJson("/fleet/realtime?windows=6"),
+                        getJson("/fleet/profitability?days=12"),
+                        getJson("/alerts?active_minutes=15&limit=25"),
+                    ]);
+                    renderFreshness(ov.freshness);
+                    renderOverview(ov);
+                    renderZones(rt);
+                    renderBars(rt);
+                    renderAlerts(al);
+                    renderProfitability(pf);
+                    $("error").hidden = true;
+                    $("refreshed").textContent = new Date()
+                        .toISOString()
+                        .slice(11, 19);
+                } catch (e) {
+                    $("error").hidden = false;
+                    $("error").textContent = "Cannot refresh: " + e.message;
+                }
+            }
+            refresh();
+            setInterval(refresh, REFRESH_MS);
+        </script>
+    </body>
+</html>
