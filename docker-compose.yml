@@ -51,6 +51,9 @@ services:
             AIRFLOW__CORE__LOAD_EXAMPLES: "false"
             _AIRFLOW_WWW_USER_USERNAME: admin
             _AIRFLOW_WWW_USER_PASSWORD: admin
+            # Fixed Simple Auth Manager login so the healthcheck can get a JWT (D48). Dev/test auth manager only.
+            AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: "admin:admin"
+            AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/simple_auth_passwords.json
             # Filesystem connection used by FileSensor (base path = the mounted storage folder, D28)
             AIRFLOW_CONN_FS_DEFAULT: '{"conn_type": "fs", "extra": {"path": "/opt/airflow/storage"}}'
             # Config for processing/batch_reconciliation.py (app DB, not the airflow_meta DB)
@@ -64,6 +67,7 @@ services:
             STREAM_FLUSH_GRACE_SECONDS: 90
         volumes:
             - ./orchestration/dags:/opt/airflow/dags
+            - ./orchestration/simple_auth_passwords.json:/opt/airflow/simple_auth_passwords.json
             - ./storage:/opt/airflow/storage
             - ./processing:/opt/airflow/project/processing
             - ./observability:/opt/airflow/project/observability
@@ -97,6 +101,32 @@ services:
             /opt/spark/bin/spark-submit
             --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.3
             /opt/spark-apps/speed_layer_job.py
+
+    healthcheck:
+        build:
+            context: ./observability
+            dockerfile: Dockerfile
+        image: ride-hailing-healthcheck:0.1.0
+        container_name: healthcheck
+        restart: unless-stopped
+        depends_on:
+            postgres:
+                condition: service_healthy
+        environment:
+            KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+            KAFKA_TOPIC_TRIP_EVENTS: trip_events
+            POSTGRES_HOST: postgres
+            POSTGRES_PORT: 5432
+            POSTGRES_DB: ridehailing
+            POSTGRES_USER: pipeline
+            POSTGRES_PASSWORD: pipeline
+            AIRFLOW_URL: http://airflow:8080
+            AIRFLOW_USER: admin
+            AIRFLOW_PASSWORD: admin
+            AIRFLOW_DAG_ID: daily_reconciliation
+            HEALTH_CHECK_INTERVAL_SECONDS: 15
+        volumes:
+            - ./observability:/app/observability:ro
 
     api:
         build:

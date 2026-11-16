@@ -65,6 +65,21 @@
             .chip.warn b {
                 color: var(--warn);
             }
+            .chip.bad b {
+                color: var(--bad);
+            }
+            .st-ok {
+                color: var(--good);
+            }
+            .st-degraded {
+                color: var(--warn);
+            }
+            .st-down {
+                color: var(--bad);
+            }
+            .st-unknown {
+                color: var(--muted);
+            }
             #error {
                 margin: 12px 20px 0;
                 padding: 8px 12px;
@@ -206,6 +221,11 @@
             <div class="chips">
                 <span
                     class="chip"
+                    id="chip-health"
+                    >Pipeline: <b>—</b></span
+                >
+                <span
+                    class="chip"
                     id="chip-speed"
                     >Speed layer: <b>—</b></span
                 >
@@ -226,6 +246,28 @@
         ></div>
 
         <main>
+            <section class="grid">
+                <div class="panel">
+                    <h2>Pipeline health</h2>
+                    <p
+                        class="sub"
+                        id="health-sub"
+                    >
+                        —
+                    </p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Component</th>
+                                <th>Status</th>
+                                <th>Detail</th>
+                                <th>Last OK (UTC)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="health-rows"></tbody>
+                    </table>
+                </div>
+            </section>
             <section class="grid">
                 <div class="panel">
                     <h2>Batch layer · latest completed simulated day</h2>
@@ -295,7 +337,7 @@
                     ></div>
                 </div>
                 <div class="panel">
-                    <h2>Idle-vehicle alerts</h2>
+                    <h2>Alerts · idle vehicles &amp; pipeline health</h2>
                     <p
                         class="sub"
                         id="alerts-sub"
@@ -524,13 +566,13 @@
 
             function renderAlerts(al) {
                 $("alerts-sub").innerHTML =
-                    `<b class="${al.active_count ? "bad" : ""}">${al.active_count} active</b> (fired in the last ${al.active_minutes} min) · ${al.total_count} total.
-    The pipeline does not resolve alerts yet, so "active" is time-based.`;
+                    `<b class="${al.active_count ? "bad" : ""}">${al.active_count} active</b> · ${al.total_count} total.
+    Pipeline alerts stay active until the problem clears; idle-vehicle alerts are active for ${al.active_minutes} min (D40).`;
                 $("alerts").innerHTML = al.alerts
                     .map(
                         (
                             a,
-                        ) => `<tr><td>${esc(a.entity_id)}</td><td>${tm(a.triggered_at)}</td>
+                        ) => `<tr><td>${esc(a.entity_id)}${a.alert_type === "pipeline_health" ? ` <span class="st-${a.severity === "critical" ? "down" : "degraded"}" title="${esc(a.message)}">(pipeline)</span>` : ""}</td><td>${tm(a.triggered_at)}</td>
     <td>${num(a.age_minutes, 1)} min</td><td><span class="badge ${a.active ? "on" : ""}">${a.active ? "active" : "past"}</span></td></tr>`,
                     )
                     .join("");
@@ -562,14 +604,38 @@
                     .join("");
             }
 
+            function renderHealth(h) {
+                const p = h.pipeline;
+                $("chip-health").className =
+                    "chip" +
+                    (p.status === "down"
+                        ? " bad"
+                        : p.status === "ok"
+                          ? ""
+                          : " warn");
+                $("chip-health").innerHTML = `Pipeline: <b>${esc(p.status)}</b>`;
+                $("health-sub").innerHTML =
+                    `<b class="st-${esc(p.status)}">${esc(p.status)}</b> · ${esc(p.message)}`;
+                $("health-rows").innerHTML = p.components
+                    .map(
+                        (
+                            c,
+                        ) => `<tr><td>${esc(c.component)}</td><td class="st-${esc(c.status)}">${esc(c.status)}</td>
+    <td>${esc(c.message ?? "")}</td><td>${tm(c.last_ok)}</td></tr>`,
+                    )
+                    .join("");
+            }
+
             async function refresh() {
                 try {
-                    const [ov, rt, pf, al] = await Promise.all([
+                    const [ov, rt, pf, al, hl] = await Promise.all([
                         getJson("/fleet/overview"),
                         getJson("/fleet/realtime?windows=6"),
                         getJson("/fleet/profitability?days=12"),
                         getJson("/alerts?active_minutes=15&limit=25"),
+                        getJson("/health"),
                     ]);
+                    renderHealth(hl);
                     renderFreshness(ov.freshness);
                     renderOverview(ov);
                     renderZones(rt);

@@ -18,9 +18,15 @@ dependencies = [
 ]
 
 [dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
 serving = [
     "fastapi>=0.141.1",
     "psycopg2-binary>=2.9.13",
     "sqlalchemy>=2.1.1",
     "uvicorn[standard]>=0.54.0",
 ]
+
+[tool.pytest.ini_options]
+filterwarnings = ["ignore::DeprecationWarning"]

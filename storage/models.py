@@ -63,6 +63,7 @@ class Alert(Base):
 
 class PipelineHealth(Base):
     __tablename__ = "pipeline_health"
+    __table_args__ = (UniqueConstraint("component", name="uq_pipeline_health_component"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     component: Mapped[str] = mapped_column(String(50), nullable=False)

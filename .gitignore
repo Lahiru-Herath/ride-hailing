@@ -14,3 +14,7 @@ storage/batch_incoming/
 storage/raw_events/
 storage/checkpoints/
 storage/batch_processed/
+prompts/
+ride-hailing-images.tar.gz
+*.tar.gz
+orchestration/simple_auth_passwords.json
