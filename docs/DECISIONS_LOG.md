@@ -2,7 +2,7 @@
 
 Running record of every non-trivial decision made so far, with reasoning, so the "why" survives a chat handoff and doubles as report material for the tech-stack-justification section.
 
-**Numbering:** next free number is **D46**. D15 is intentionally unused (skipped during Phase 3; kept so existing references stay stable).
+**Numbering:** next free number is **D57**. D15 is intentionally unused (skipped during Phase 3; kept so existing references stay stable).
 
 ---
 
@@ -345,7 +345,7 @@ Per-window `active_sum + idle_sum` across zones was 18–34 against a fleet of 1
 
 ### D40 — "Active alert" is time-based
 
-An alert is active if it is unresolved and was triggered within `active_minutes` (default 15). The database can't show whether a vehicle is still idle, and nothing sets `resolved=true` (363 alerts, 0 resolved at the time of the check). The dashboard states this. Real resolution needs a Spark change and belongs to Phase 6.
+(Superseded for pipeline alerts by D52; still applies to idle-vehicle alerts.) An alert is active if it is unresolved and was triggered within `active_minutes` (default 15). The database can't show whether a vehicle is still idle, and nothing sets `resolved=true` (363 alerts, 0 resolved at the time of the check). The dashboard states this. Real resolution needs a Spark change and belongs to Phase 6.
 
 ### D41 — The merged overview is approximate by design
 
@@ -366,6 +366,101 @@ Speed-layer `now − max(window_end)` swings between about 3 and 8 minutes (obse
 ### D45 — API container operations: stdlib healthcheck, restart policy, no auth
 
 The `python:3.11-slim` image has no curl, so the compose healthcheck calls `/health` with Python's `urllib` (every 15 s, 10 s start period). `restart: on-failure` is set on `api` (the spark service still has none, see open items). The API is read-only, single-origin and unauthenticated by design: it serves a demo on localhost, and the report should state that a production deployment would add authentication and rate limiting. First build on the development laptop took about 19 min (Docker Desktop layer export/unpack ~8 min, ~6.5 min of it `uv sync`); cached rebuilds are fast.
+
+---
+
+## Phase 6 decisions (observability)
+
+### D46 — `pipeline_health` is current state: one row per component
+
+The healthcheck upserts one row per component (`kafka`, `producer`, `speed_layer`, `batch_layer`, `airflow_dag`)
+using `INSERT ... ON CONFLICT (component) DO UPDATE`. A unique constraint `uq_pipeline_health_component`
+was added by Alembic migration `7c3e5a91b2d4` (rows from before the migration were deleted: they had no meaning
+under the new contract). History is kept in `alerts`, not in `pipeline_health`. `last_heartbeat` only advances
+when the status is `ok`, so it means "last known good".
+
+### D47 — Health checking runs as its own Compose service; the producer signal is the Kafka end offset
+
+`observability/healthcheck.py` runs as the `healthcheck` service (restart `unless-stopped`) every 15 s. "The
+producer/stream stopped" is detected by the topic's end offset no longer advancing (kafka-python
+`end_offsets`), not by inspecting processes or logs: it works regardless of where the producer runs (host
+here) and is what the downstream layers actually depend on. Thresholds: `degraded` after 30 s without new
+messages, `down` after 60 s (the simulated producer emits roughly every 3 s per vehicle, so 30 s is a large
+safety margin). Speed/batch lag thresholds come from the measured normal ranges in D44 (speed degraded > 600 s,
+batch degraded > 720 s, both down > 1200 s). Airflow thresholds: down if the latest finished run failed;
+degraded if any run failed in the last 30 min or a run has been running ≥ 900 s.
+
+### D48 — Airflow is checked through the REST API v2 with a fixed development login
+
+Airflow 3.3.2 REST API v2 uses a JWT obtained from `POST /auth/token` (username + password) and sent as a
+Bearer token (the checker re-logs in once on a 401). Simple Auth Manager generates a random password on every
+container creation, so a fixed `admin:admin` is configured through
+`AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS` and a mounted `simple_auth_passwords.json`. Simple Auth Manager is
+documented as development/testing only; a production deployment would use a real auth manager and a secret.
+Report limitation.
+
+### D49 — Lag checks are gated on the producer, with a recovery grace period
+
+If the producer is not `ok`, the speed and batch layers are reported `degraded` ("blocked by upstream") but
+raise no alert of their own: their staleness is a consequence, and alerting on it would bury the root cause.
+After the producer resumes, lag is not judged for 600 s (`RECOVERY_GRACE_SECONDS`), because the speed layer
+needs about a window plus the watermark to catch up (D44). One open alert per component; it is opened on
+`degraded`/`down`, escalated/downgraded when severity changes and resolved when the component returns to `ok`.
+
+### D50 — The healthcheck image is pip-only with the code bind-mounted; one kafka-python finding
+
+The image installs only `kafka-python==3.0.11` and `psycopg2-binary` with pip (no uv or lockfile for two
+libraries) and mounts `./observability` read-only, so code changes need only a container restart. In
+kafka-python 3.0.11 `api_version_auto_timeout_ms` is rejected (`KafkaConfigurationError`); the bootstrap
+timeout is `bootstrap_timeout_ms` (default 30 s). Setting it to 5 s keeps a Kafka outage from stalling the
+15 s check loop. `topics()` must be called before `partitions_for_topic()`, which can return `None` otherwise.
+
+### D51 — `/health` reports pipeline health in the body and stays HTTP 200
+
+`/health` now returns `status` (`ok`/`degraded`/`down`/`unknown`), `database` and a `pipeline` block with
+the five components. HTTP 503 is returned only when the database is unreachable. A degraded or down pipeline
+returns 200, otherwise the API container's own Docker healthcheck would mark the API unhealthy because of an
+upstream problem the API cannot fix. If `pipeline_health` is empty or its newest `checked_at` is older than
+60 s, the pipeline status is `unknown` ("healthcheck not reporting"), so a dead checker cannot look healthy.
+The dashboard shows a header chip and a Pipeline health table.
+
+### D52 — Alert "active" is now type-aware (supersedes the time-only rule in D40 for pipeline alerts)
+
+Idle-vehicle alerts stay time-based (unresolved and fired within `active_minutes`, 15 by default) because
+the Spark job never resolves them. `pipeline_health` alerts are active for as long as they are unresolved,
+because the healthcheck resolves them itself when the component recovers.
+
+### D53 — Not built, recorded as limitations
+
+(a) A log error-rate check was planned (per-component log files plus an error-rate threshold) and is not
+implemented; component failures are detected from their effects (Kafka offset, data lag, DAG run state)
+instead. (b) Idle-vehicle alerts are still never resolved by the speed layer (D40 still applies to them);
+fixing it needs an `idle_resolved` row from the stateful processor and a Spark restart with checkpoint
+compatibility risk. (c) The healthcheck itself is a single process; its failure is made visible by the 60 s
+staleness rule in D51 rather than by a second watcher.
+
+### D54 — Batch layer cannot distinguish "no trips" from "the stream was down"
+
+The batch readiness check (D31) passes once later events exist in the raw Parquet, so a day with a stream
+outage produces a valid-looking row with zero or low trips. The producer-offset check (D47) and its alerts are
+what flag the outage; the batch data for that day should be treated as incomplete. Report limitation.
+
+### D55 — Request IDs for correlation, not distributed tracing
+
+Every API request carries an `X-Request-ID`: a caller-supplied value is reused, otherwise a 16-character hex id is
+generated. It is held in a `ContextVar`, attached to every log line written while the request is handled (via a
+logging filter), returned in the response header, and returned in the body of a 500 so a user can quote it and an
+operator can find the logged traceback. Between pipeline stages, records are correlated by `trip_id`, `vehicle_id` and
+event time. Not built: spans or trace propagation across Kafka and Spark (OpenTelemetry), which would need message
+headers and instrumentation of the Spark job. Documented as a limitation.
+
+### D56 — `/metrics` in Prometheus text format, without a Prometheus server
+
+`GET /metrics` exposes request counters and latency (labelled by route template, so ids do not create unbounded
+labels), per-component status from `pipeline_health`, layer lag in seconds and the number of open alerts, in the
+Prometheus text exposition format (`text/plain; version=0.0.4`). No Prometheus or Grafana containers were added: the
+format makes the endpoint scrapeable later, and the dashboard and `/health` already cover the human view within the
+project's time budget.
 
 ---
 
@@ -408,6 +503,28 @@ The `python:3.11-slim` image has no curl, so the compose healthcheck calls `/hea
   `http://localhost:8000/` verified in a browser by the user.
 - Measured, not assumed: no duplicate (window_start, zone) rows (976/976, D38); speed-layer lag 3–8 min is normal
   (D44); per-zone vehicle counts are not additive (D39).
+
+**Phase 6 exit criteria — verified:**
+
+- Producer stopped for about 3 minutes (20 Oct 2026): `producer` went `degraded` after 30 s (warning alert
+  opened) and `down` after 60 s (escalated to critical); `speed_layer`/`batch_layer` went `degraded`
+  "blocked by upstream" with no alerts of their own; when the producer restarted it returned to `ok` and the
+  alert was resolved.
+- Airflow failure (16 Nov 2026): with `processing/batch_reconciliation.py` deliberately broken, run
+  `scheduled__2026-11-16T08:55:00+00:00` failed at 08:56:50 UTC; the healthcheck logged `airflow_dag ok -> down`
+  and opened critical alert id 307 at 08:56:51 UTC; `/health` reported `status: down` with
+  `airflow_dag down "latest finished run failed"`. The script was reverted afterwards (`git diff` clean).
+- `/health` after deployment: all five components `ok`, database `ok`; dashboard shows the pipeline chip
+  and table.
+- Producer outage re-run (16 Nov 2026): alert 335 opened `critical` ("no new Kafka messages for 60 s") and was resolved
+  after recovery.
+- `/metrics` and request IDs verified on the running stack (16 Nov 2026): `curl -i -H "X-Request-ID: demo-001"
+  localhost:8000/health` returned `x-request-id: demo-001`, and the API's JSON log line carried `"request_id": "demo-001"`;
+  `/metrics` returned request counters, latency sums and per-component status in Prometheus text format.
+- `uv run pytest tests -v`: 22 passed (health-check thresholds, Airflow client, JSON logging).
+- Measured: speed-layer lag observed 246-471 s and batch-layer lag 109-544 s in the healthy state, inside the
+  600 s / 720 s thresholds.
+
 
 **Observation (not a decision):** trip completions arrive in waves with a period of roughly 15–18 minutes,
 likely because all simulated vehicles start in sync (inference — producer code unchanged). Per-window trip counts
